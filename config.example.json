@@ -1,0 +1,18 @@
+{
+  "host": "bxian1.pages.dev",
+  "path": "/proxyip=proxy.mia.xx.kg",
+  "port": 443,
+  "colo": "NRT",
+  "max_latency_ms": 200,
+  "min_speed_MBps": 20,
+  "keep": 10,
+  "safe_min_results": 3,
+  "sample_subnets": 2000,
+  "http_workers": 120,
+  "vless_workers": 25,
+  "vless_candidates": 80,
+  "speed_seconds": 4,
+  "speed_bytes": 50000000,
+  "speed_host": "speed.cloudflare.com",
+  "speed_path": "/__down?bytes=50000000"
+}
