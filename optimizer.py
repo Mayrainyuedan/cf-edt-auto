@@ -254,11 +254,32 @@ def edt_login(host, password):
     cj = http.cookiejar.CookieJar()
     opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
     data = urllib.parse.urlencode({"password": password}).encode()
-    req = urllib.request.Request(host.rstrip("/") + "/login", data=data, method="POST", headers={"Content-Type":"application/x-www-form-urlencoded"})
-    with opener.open(req, timeout=15) as r:
-        body = r.read().decode("utf-8", "replace")
-        if r.status != 200 or "success" not in body.lower():
-            raise RuntimeError("EDT login failed")
+    base = host.rstrip("/")
+    req = urllib.request.Request(
+        base + "/login",
+        data=data,
+        method="POST",
+        headers={
+            "Content-Type": "application/x-www-form-urlencoded",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/154 Safari/537.36",
+            "Accept": "application/json,text/plain,*/*",
+            "Origin": base,
+            "Referer": base + "/login",
+        },
+    )
+    try:
+        with opener.open(req, timeout=15) as r:
+            body = r.read().decode("utf-8", "replace")
+            if r.status != 200 or "success" not in body.lower():
+                raise RuntimeError(f"EDT login failed: HTTP {r.status}: {body[:300]}")
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", "replace") if e.fp else ""
+        if e.code == 403:
+            raise RuntimeError(
+                "EDT returned HTTP 403 on /login. Check EDT_URL is the base domain (for example https://example.com, not /admin), "
+                "ADMIN password, and whether Cloudflare/WAF blocks GitHub Actions. Response: " + body[:300]
+            ) from e
+        raise RuntimeError(f"EDT login HTTP {e.code}: {body[:300]}") from e
     return opener
 
 
@@ -277,7 +298,7 @@ def edt_write(opener, host, content):
 
 
 def build_add(results):
-    return "\n".join(f"{x['ip']}:{x['port']}#NRT" for x in results) + "\n"
+    return "\n".join(f"{x['ip']}:{x['port']}#{x.get('colo') or 'CF'}" for x in results) + "\n"
 
 
 def main():
@@ -301,7 +322,12 @@ def main():
                 r["port"] = cfg["port"]
                 prelim.append(r)
     prelim.sort(key=lambda x: x["latency"])
-    print(f"NRT under {cfg['max_latency_ms']}ms: {len(prelim)}")
+    label = cfg.get("colo", "").strip().upper() or "ANY"
+    print(f"{label} under {cfg['max_latency_ms']}ms: {len(prelim)}")
+    if not cfg.get("colo", "").strip():
+        from collections import Counter
+        observed = Counter(x.get("colo", "?") for x in prelim)
+        print("observed CF colos:", ", ".join(f"{k}={v}" for k,v in observed.most_common(12)))
     prelim = prelim[:cfg["vless_candidates"]]
 
     print("[3/5] real VLESS + WS + TLS speed test")
@@ -318,11 +344,12 @@ def main():
     print(f"qualified: {len(qualified)}")
 
     print("[4/5] safety check")
+    if len(qualified) < cfg["safe_min_results"]:
+        print(f"Only {len(qualified)} qualified IPs; keep remote ADD.txt unchanged and skip EDT login.")
+        return
+
     opener = edt_login(edt_url, password)
     old = edt_read(opener, edt_url)
-    if len(qualified) < cfg["safe_min_results"]:
-        print(f"Only {len(qualified)} qualified IPs; keep remote ADD.txt unchanged.")
-        return
 
     add = build_add(qualified)
     print(add)
