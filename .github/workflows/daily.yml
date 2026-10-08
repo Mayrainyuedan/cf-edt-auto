@@ -1,0 +1,35 @@
+name: CF-EDT daily optimizer
+
+on:
+  schedule:
+    - cron: '30 19 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  optimize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run optimizer
+        env:
+          EDT_URL: ${{ secrets.EDT_URL }}
+          EDT_PASSWORD: ${{ secrets.EDT_PASSWORD }}
+          VLESS_UUID: ${{ secrets.VLESS_UUID }}
+        run: python3 optimizer.py
+
+      - name: Upload diagnostic artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cf-edt-results-${{ github.run_number }}
+          path: |
+            latest_ADD.txt
+            latest_results.json
+          if-no-files-found: ignore
+          retention-days: 3
